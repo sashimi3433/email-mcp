@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email MCP — アカウント管理</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="container">
+    <header>
+        <h1>📧 Email MCP</h1>
+        <p class="subtitle">自前メールサーバー × AI — 安全に連携</p>
+    </header>
+
+    <!-- Server Domains Section -->
+    <section class="card">
+        <div class="card-header">
+            <h2>⚙️ サーバードメイン設定</h2>
+            <button class="btn btn-secondary" onclick="showAddDomain()">+ ドメイン追加</button>
+        </div>
+        <p class="hint">ドメイン名（@以降）とIMAP/SMTP接続情報を登録すると、新しいアカウント追加時に自動入力されます。</p>
+        <div id="domains-list">
+            {% for d in domains %}
+            <div class="domain-item" data-id="{{ d.id }}">
+                <div class="domain-info">
+                    <span class="domain-badge">@{{ d.domain }}</span>
+                    <span class="domain-detail">IMAP: {{ d.imap_host }}:{{ d.imap_port }}{% if d.imap_ssl %} (SSL) {% endif %}</span>
+                    <span class="domain-detail">SMTP: {{ d.smtp_host }}:{{ d.smtp_port }}{% if d.smtp_ssl %} (SSL) {% endif %}</span>
+                </div>
+                <button class="btn btn-danger btn-sm" onclick="deleteDomain({{ d.id }})">削除</button>
+            </div>
+            {% endfor %}
+            {% if not domains %}
+            <p class="empty">登録されたドメインがありません</p>
+            {% endif %}
+        </div>
+    </section>
+
+    <!-- Add Domain Modal -->
+    <div id="domain-modal" class="modal hidden">
+        <div class="modal-overlay" onclick="hideAddDomain()"></div>
+        <div class="modal-content">
+            <h3>ドメイン設定を追加</h3>
+            <div class="form-group">
+                <label>ドメイン名 (@以降)</label>
+                <input type="text" id="domain-name" placeholder="example.com">
+            </div>
+            <div class="form-row">
+                <div class="form-group flex-1">
+                    <label>IMAP ホスト</label>
+                    <input type="text" id="domain-imap-host" placeholder="imap.example.com">
+                </div>
+                <div class="form-group" style="width:100px">
+                    <label>ポート</label>
+                    <input type="number" id="domain-imap-port" value="993">
+                </div>
+                <div class="form-group" style="width:60px">
+                    <label>SSL</label>
+                    <input type="checkbox" id="domain-imap-ssl" checked>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group flex-1">
+                    <label>SMTP ホスト</label>
+                    <input type="text" id="domain-smtp-host" placeholder="smtp.example.com">
+                </div>
+                <div class="form-group" style="width:100px">
+                    <label>ポート</label>
+                    <input type="number" id="domain-smtp-port" value="587">
+                </div>
+                <div class="form-group" style="width:60px">
+                    <label>SSL</label>
+                    <input type="checkbox" id="domain-smtp-ssl" checked>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="hideAddDomain()">キャンセル</button>
+                <button class="btn btn-primary" onclick="addDomain()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Accounts Section -->
+    <section class="card">
+        <div class="card-header">
+            <h2>📧 メールアカウント</h2>
+            <button class="btn btn-primary" onclick="showAddAccount()">+ アカウント追加</button>
+        </div>
+        <div id="accounts-list">
+            {% for a in accounts %}
+            <div class="account-item" data-id="{{ a.id }}">
+                <div class="account-info">
+                    <div class="account-header">
+                        <strong>{{ a.label }}</strong>
+                        <span class="account-email">{{ a.email_address }}</span>
+                        {% if a.server_domain %}
+                        <span class="domain-badge small">@{{ a.server_domain }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="account-meta">
+                        <span>IMAP: {{ a.imap_host }}:{{ a.imap_port }}</span>
+                        <span>SMTP: {{ a.smtp_host }}:{{ a.smtp_port }}</span>
+                        <span>最終同期: {{ a.last_sync or '未同期' }}</span>
+                    </div>
+                </div>
+                <div class="account-actions">
+                    <button class="btn btn-accent btn-sm" onclick="syncAccount({{ a.id }}, this)">🔄 同期</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteAccount({{ a.id }}, '{{ a.email_address }}')">削除</button>
+                </div>
+            </div>
+            {% endfor %}
+            {% if not accounts %}
+            <p class="empty">アカウントが登録されていません</p>
+            {% endif %}
+        </div>
+    </section>
+
+    <!-- Add Account Modal -->
+    <div id="account-modal" class="modal hidden">
+        <div class="modal-overlay" onclick="hideAddAccount()"></div>
+        <div class="modal-content modal-wide">
+            <h3>メールアカウントを追加</h3>
+
+            <div class="form-group">
+                <label>表示名（ラベル）</label>
+                <input type="text" id="acc-label" placeholder="仕事用メイル など">
+            </div>
+
+            <div class="form-row">
+                <div class="form-group flex-1">
+                    <label>メールアドレス</label>
+                    <input type="email" id="acc-email" placeholder="user@example.com" onblur="lookupDomain(this.value)">
+                </div>
+                <div class="form-group flex-1">
+                    <label>ログインユーザー名（省略時 = メールアドレス）</label>
+                    <input type="text" id="acc-username" placeholder="省略可">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>アプリパスワード</label>
+                <input type="password" id="acc-password" placeholder="パスワードを入力">
+            </div>
+
+            <div class="domain-auto-fill hidden" id="domain-auto-fill">
+                <div class="auto-fill-badge">✨ 登録済みドメイン設定を自動入力しました</div>
+            </div>
+
+            <h4 class="section-label">IMAP 設定</h4>
+            <div class="form-row">
+                <div class="form-group flex-1">
+                    <label>IMAP ホスト</label>
+                    <input type="text" id="acc-imap-host" placeholder="imap.example.com">
+                </div>
+                <div class="form-group" style="width:100px">
+                    <label>ポート</label>
+                    <input type="number" id="acc-imap-port" value="993">
+                </div>
+                <div class="form-group" style="width:60px">
+                    <label>SSL</label>
+                    <input type="checkbox" id="acc-imap-ssl" checked>
+                </div>
+            </div>
+
+            <h4 class="section-label">SMTP 設定</h4>
+            <div class="form-row">
+                <div class="form-group flex-1">
+                    <label>SMTP ホスト</label>
+                    <input type="text" id="acc-smtp-host" placeholder="smtp.example.com">
+                </div>
+                <div class="form-group" style="width:100px">
+                    <label>ポート</label>
+                    <input type="number" id="acc-smtp-port" value="587">
+                </div>
+                <div class="form-group" style="width:60px">
+                    <label>SSL</label>
+                    <input type="checkbox" id="acc-smtp-ssl" checked>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="hideAddAccount()">キャンセル</button>
+                <button class="btn btn-primary" onclick="addAccount()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>Email MCP Server — <code>uv run email-mcp-server</code> (MCP) | <code>uv run email-mcp-ui</code> (Web UI)</p>
+    </footer>
+</div>
+
+<script>
+async function api(method, url, body) {
+    const opts = { method, headers: {'Content-Type': 'application/json'} };
+    if (body) opts.body = JSON.stringify(body);
+    const res = await fetch(url, opts);
+    return await res.json();
+}
+
+// ─── Domain ──────────────────────────────────────
+function showAddDomain() { document.getElementById('domain-modal').classList.remove('hidden'); }
+function hideAddDomain() { document.getElementById('domain-modal').classList.add('hidden'); }
+
+async function addDomain() {
+    const domain = document.getElementById('domain-name').value.trim();
+    const data = {
+        domain,
+        imap_host: document.getElementById('domain-imap-host').value.trim(),
+        imap_port: parseInt(document.getElementById('domain-imap-port').value) || 993,
+        imap_ssl: document.getElementById('domain-imap-ssl').checked,
+        smtp_host: document.getElementById('domain-smtp-host').value.trim(),
+        smtp_port: parseInt(document.getElementById('domain-smtp-port').value) || 587,
+        smtp_ssl: document.getElementById('domain-smtp-ssl').checked,
+    };
+    if (!domain || !data.imap_host || !data.smtp_host) { alert('必須項目を入力してください'); return; }
+    const res = await api('POST', '/api/domains', data);
+    if (res.success) { location.reload(); } else { alert('エラー: ' + JSON.stringify(res)); }
+}
+
+async function deleteDomain(id) {
+    if (!confirm('このドメイン設定を削除しますか？')) return;
+    await api('DELETE', `/api/domains/${id}`);
+    location.reload();
+}
+
+// ─── Account ─────────────────────────────────────
+function showAddAccount() { document.getElementById('account-modal').classList.remove('hidden'); }
+function hideAddAccount() {
+    document.getElementById('account-modal').classList.add('hidden');
+    document.getElementById('domain-auto-fill').classList.add('hidden');
+}
+
+async function lookupDomain(emailOrDomain) {
+    if (!emailOrDomain || !emailOrDomain.includes('@')) return;
+    const domain = emailOrDomain.split('@')[1];
+    const res = await api('POST', '/api/domains/lookup', { domain });
+    if (res.found && res.config) {
+        document.getElementById('acc-imap-host').value = res.config.imap_host;
+        document.getElementById('acc-imap-port').value = res.config.imap_port;
+        document.getElementById('acc-imap-ssl').checked = !!res.config.imap_ssl;
+        document.getElementById('acc-smtp-host').value = res.config.smtp_host;
+        document.getElementById('acc-smtp-port').value = res.config.smtp_port;
+        document.getElementById('acc-smtp-ssl').checked = !!res.config.smtp_ssl;
+        document.getElementById('domain-auto-fill').classList.remove('hidden');
+    } else {
+        document.getElementById('domain-auto-fill').classList.add('hidden');
+    }
+}
+
+async function addAccount() {
+    const email = document.getElementById('acc-email').value.trim();
+    const password = document.getElementById('acc-password').value;
+    const label = document.getElementById('acc-label').value.trim();
+    const data = {
+        label: label || email,
+        email_address: email,
+        password,
+        username: document.getElementById('acc-username').value.trim() || null,
+        imap_host: document.getElementById('acc-imap-host').value.trim(),
+        imap_port: parseInt(document.getElementById('acc-imap-port').value) || 993,
+        imap_ssl: document.getElementById('acc-imap-ssl').checked,
+        smtp_host: document.getElementById('acc-smtp-host').value.trim(),
+        smtp_port: parseInt(document.getElementById('acc-smtp-port').value) || 587,
+        smtp_ssl: document.getElementById('acc-smtp-ssl').checked,
+    };
+    if (!email || !password || !data.imap_host || !data.smtp_host) { alert('必須項目を入力してください'); return; }
+    const res = await api('POST', '/api/accounts', data);
+    if (res.success) { location.reload(); } else { alert('エラー: ' + (res.error || JSON.stringify(res))); }
+}
+
+async function deleteAccount(id, email) {
+    if (!confirm(`アカウント「${email}」とキャッシュされたメールを削除しますか？`)) return;
+    await api('DELETE', `/api/accounts/${id}`);
+    location.reload();
+}
+
+async function syncAccount(id, btn) {
+    const orig = btn.textContent;
+    btn.textContent = '⏳ 同期中...';
+    btn.disabled = true;
+    try {
+        const res = await api('POST', `/api/accounts/${id}/sync`, {});
+        alert(res.success
+            ? `✅ ${res.messages_synced}件のメールを同期しました\nフォルダ: ${res.folders_synced.join(', ')}`
+            : `❌ 同期失敗: ${res.error}`);
+    } catch(e) { alert('通信エラー: ' + e); }
+    btn.textContent = orig;
+    btn.disabled = false;
+}
+</script>
+</body>
+</html>
