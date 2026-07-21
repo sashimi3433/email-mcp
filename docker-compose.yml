@@ -1,0 +1,15 @@
+services:
+  email-mcp:
+    build: .
+    container_name: email-mcp
+    ports:
+      - "5858:5858"
+    volumes:
+      - email-mcp-data:/app/data
+    environment:
+      - EMAIL_MCP_WEB_HOST=0.0.0.0
+      - EMAIL_MCP_WEB_PORT=5858
+    restart: unless-stopped
+
+volumes:
+  email-mcp-data:

@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# Data (sensitive — never bake into image)
+data/
+*.db
+*.sqlite3
+.encryption_key
+
+# Flutter app (not needed in Docker image)
+app/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# Git
+.git/
+.gitignore

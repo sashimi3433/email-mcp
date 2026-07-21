@@ -19,13 +19,27 @@ Passwords are encrypted at rest with AES-256. AI clients never see credentials; 
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### Option A: Docker (Recommended)
+
+```bash
+git clone https://github.com/sashimi3433/email-mcp.git
+cd email-mcp
+docker compose up -d
+```
+
+That's it. Web UI is at `http://localhost:5858`.
+
+Data (SQLite DB + encryption key) persists in a Docker volume (`email-mcp-data`).
+
+### Option B: Local Install (uv)
+
+#### Prerequisites
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/) (recommended) or pip
 - An IMAP/SMTP email account (self-hosted, Gmail with app password, etc.)
 
-### Install
+#### Install
 
 ```bash
 git clone https://github.com/sashimi3433/email-mcp.git
@@ -33,7 +47,7 @@ cd email-mcp
 uv sync
 ```
 
-### Start the Web UI (account management)
+#### Start the Web UI (account management)
 
 ```bash
 uv run email-mcp-ui
