@@ -4,6 +4,8 @@
 
 Passwords are encrypted at rest with AES-256. AI clients never see credentials; they only interact through scoped MCP tools.
 
+> 📖 **日本語ドキュメント**: [README.ja.md](docs/README.ja.md) | [アーキテクチャ](docs/ARCHITECTURE.ja.md) | [Flutterアプリ](docs/APP.ja.md)
+
 ## ✨ Features
 
 - **MCP Server** — Exposes email tools (list, read, search, sync) to any MCP-compatible AI client
