@@ -1,9 +1,27 @@
 [project]
 name = "email-mcp"
-version = "0.1.0"
-description = "MCP server for AI-safe access to self-hosted IMAP/SMTP email"
+version = "0.2.0"
+description = "MCP server + Flutter app for self-hosted IMAP/SMTP email — AI-safe access with local encryption"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.11"
+authors = [
+    { name = "sashimi3433", url = "https://github.com/sashimi3433" },
+]
+keywords = ["mcp", "email", "imap", "smtp", "self-hosted", "ai", "llm", "model-context-protocol"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Communications :: Email",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+]
 dependencies = [
     "beautifulsoup4>=4.14.3",
     "cryptography>=48.0.0",
@@ -11,6 +29,11 @@ dependencies = [
     "html2text>=2025.4.15",
     "mcp[cli]>=1.27.2",
 ]
+
+[project.urls]
+Homepage = "https://github.com/sashimi3433/email-mcp"
+Repository = "https://github.com/sashimi3433/email-mcp"
+Issues = "https://github.com/sashimi3433/email-mcp/issues"
 
 [project.scripts]
 email-mcp-server = "email_mcp.server:run_server"

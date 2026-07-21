@@ -1,13 +1,50 @@
-# Python-generated files
+# Python
 __pycache__/
-*.py[oc]
+*.py[cod]
+*$py.class
+*.so
 build/
 dist/
 wheels/
 *.egg-info
+*.egg
+.eggs/
 
 # Virtual environments
-.venv
+.venv/
+venv/
+env/
 
-# Encrypted local database & keys
+# Sensitive data (NEVER commit)
 data/
+*.db
+*.sqlite3
+.encryption_key
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Flutter / Dart
+app/.dart_tool/
+app/.packages
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/.metadata
+app/build/
+app/android/local.properties
+app/android/.gradle/
+app/ios/Pods/
+app/macos/Flutter/ephemeral/
+app/*.iml
+app/android/*.iml
+app/.idea/
+
+# OS files
+Thumbs.db
+Desktop.ini
