@@ -11,6 +11,8 @@ from .database import (
     list_messages as db_list_messages,
     get_message as db_get_message,
     search_messages as db_search_messages,
+    list_all_messages as db_list_all_messages,
+    get_all_message as db_get_all_message,
 )
 from .sync import sync_account
 from .smtp_client import connect_smtp_for_account
@@ -291,6 +293,26 @@ def api_list_folders(account_id):
         return jsonify({"account_id": account_id, "folders": folders})
     finally:
         conn.close()
+
+
+# ─── Unified Inbox API (all accounts) ──────────────────────────────────
+
+@app.route("/api/messages", methods=["GET"])
+def api_list_all_messages():
+    """List messages across all accounts (INBOX only), newest first."""
+    limit = int(request.args.get("limit", 100))
+    offset = int(request.args.get("offset", 0))
+    messages = db_list_all_messages(limit, offset)
+    return jsonify({"count": len(messages), "messages": messages})
+
+
+@app.route("/api/messages/<int:message_id>", methods=["GET"])
+def api_get_unified_message(message_id):
+    """Get a single message by DB id (cross-account)."""
+    msg = db_get_all_message(message_id)
+    if not msg:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(msg)
 
 
 # ─── Health / Info ─────────────────────────────────────────────────────

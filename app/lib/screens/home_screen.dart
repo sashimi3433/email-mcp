@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../models/account.dart';
-import 'accounts_screen.dart';
+import 'unified_inbox_screen.dart';
+import 'account_form_screen.dart';
 import 'domains_screen.dart';
-import 'messages_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
+import 'messages_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final ApiService api;
@@ -19,7 +20,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   bool _serverOnline = false;
-  final GlobalKey<_DashboardScreenState> _dashboardKey = GlobalKey();
+  final _homeKey = GlobalKey<_HomeTabState>();
 
   @override
   void initState() {
@@ -35,16 +36,14 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final screens = [
-      _DashboardScreen(key: _dashboardKey, api: widget.api),
-      AccountsScreen(api: widget.api),
+      HomeTab(key: _homeKey, api: widget.api),
       DomainsScreen(api: widget.api),
       SearchScreen(api: widget.api),
       SettingsScreen(api: widget.api, onServerChanged: _checkHealth),
     ];
 
-    final labels = ['ダッシュボード', 'アカウント', 'ドメイン', '検索', '設定'];
+    final labels = ['メール', 'ドメイン', '検索', '設定'];
     final icons = [
-      Icons.dashboard_outlined,
       Icons.mail_outline,
       Icons.dns_outlined,
       Icons.search,
@@ -92,40 +91,31 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const VerticalDivider(width: 1),
-          Expanded(
-            child: screens[_selectedIndex],
-          ),
+          Expanded(child: screens[_selectedIndex]),
         ],
       ),
     );
   }
 }
 
-/// Dashboard screen — overview of accounts, recent messages.
-class _DashboardScreen extends StatefulWidget {
+/// Unified home tab: all-inbox + account list combined.
+class HomeTab extends StatefulWidget {
   final ApiService api;
-  const _DashboardScreen({super.key, required this.api});
+  const HomeTab({super.key, required this.api});
 
   @override
-  State<_DashboardScreen> createState() => _DashboardScreenState();
+  State<HomeTab> createState() => _HomeTabState();
 }
 
-class _DashboardScreenState extends State<_DashboardScreen> {
+class _HomeTabState extends State<HomeTab> {
   List<Account> _accounts = [];
   bool _loading = true;
   String? _error;
-  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _loadData();
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -143,20 +133,26 @@ class _DashboardScreenState extends State<_DashboardScreen> {
     await _loadData();
   }
 
-  String _formatSyncTime(String? isoStr) {
-    if (isoStr == null || isoStr.isEmpty) return '未同期';
-    try {
-      final dt = DateTime.parse(isoStr).toLocal();
-      final now = DateTime.now();
-      final diff = now.difference(dt);
-      if (diff.inMinutes < 1) return 'たった今';
-      if (diff.inMinutes < 60) return '${diff.inMinutes}分前';
-      if (diff.inHours < 24) return '${diff.inHours}時間前';
-      if (diff.inDays < 7) return '${diff.inDays}日前';
-      return '${dt.month}/${dt.day}';
-    } catch (_) {
-      return '未同期';
-    }
+  void _confirmDelete(Account account) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('アカウント削除'),
+        content: Text('「${account.label}」(${account.emailAddress}) を削除しますか？\nキャッシュされたメールも全て削除されます。'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('キャンセル')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await widget.api.deleteAccount(account.id!);
+              _loadData();
+            },
+            child: const Text('削除'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -183,51 +179,13 @@ class _DashboardScreenState extends State<_DashboardScreen> {
       body: RefreshIndicator(
         onRefresh: _refresh,
         child: CustomScrollView(
-          controller: _scrollController,
           slivers: [
             SliverPadding(
-              padding: const EdgeInsets.all(24),
-              sliver: SliverToBoxAdapter(
-                child: Text('Email MCP', style: Theme.of(context).textTheme.headlineMedium),
-              ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              sliver: SliverToBoxAdapter(
-                child: IntrinsicHeight(
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _StatCard(
-                          icon: Icons.mail_outline,
-                          label: 'アカウント数',
-                          value: '${_accounts.length}',
-                          color: Colors.blue,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _StatCard(
-                          icon: Icons.sync,
-                          label: '最終同期',
-                          value: _accounts.isNotEmpty
-                            ? _formatSyncTime(_accounts.first.lastSync)
-                            : '-',
-                          color: Colors.green,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 24)),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
               sliver: SliverToBoxAdapter(
                 child: Row(
                   children: [
-                    Text('アカウント', style: Theme.of(context).textTheme.titleLarge),
+                    Text('メール', style: Theme.of(context).textTheme.headlineMedium),
                     const Spacer(),
                     IconButton(
                       onPressed: _refresh,
@@ -236,6 +194,34 @@ class _DashboardScreenState extends State<_DashboardScreen> {
                     ),
                   ],
                 ),
+              ),
+            ),
+            // All-inbox shortcut
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              sliver: SliverToBoxAdapter(
+                child: Card(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  child: ListTile(
+                    leading: Icon(Icons.inbox, color: Theme.of(context).colorScheme.primary),
+                    title: const Text('すべてのメール', style: TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text('${_accounts.length}個のアカウント'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => UnifiedInboxScreen(api: widget.api),
+                      ));
+                    },
+                  ),
+                ),
+              ),
+            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 16)),
+            // Account list header
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              sliver: SliverToBoxAdapter(
+                child: Text('アカウント', style: Theme.of(context).textTheme.titleLarge),
               ),
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 8)),
@@ -252,9 +238,29 @@ class _DashboardScreenState extends State<_DashboardScreen> {
                     ),
                     title: Text(a.label),
                     subtitle: Text(a.emailAddress),
-                    trailing: a.lastSync != null
-                      ? const Icon(Icons.check_circle, color: Colors.green, size: 20)
-                      : const Icon(Icons.warning, color: Colors.orange, size: 20),
+                    trailing: PopupMenuButton(
+                      itemBuilder: (ctx) => [
+                        const PopupMenuItem(value: 'view', child: Text('メールを見る')),
+                        const PopupMenuItem(value: 'edit', child: Text('編集')),
+                        const PopupMenuItem(value: 'delete', child: Text('削除')),
+                      ],
+                      onSelected: (val) async {
+                        if (val == 'view') {
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => MessagesScreen(api: widget.api, account: a),
+                          ));
+                        } else if (val == 'edit') {
+                          final domains = await widget.api.listDomains();
+                          if (!context.mounted) return;
+                          await Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => AccountFormScreen(api: widget.api, account: a, domains: domains),
+                          ));
+                          _loadData();
+                        } else if (val == 'delete') {
+                          _confirmDelete(a);
+                        }
+                      },
+                    ),
                     onTap: () {
                       Navigator.push(context, MaterialPageRoute(
                         builder: (_) => MessagesScreen(api: widget.api, account: a),
@@ -267,49 +273,17 @@ class _DashboardScreenState extends State<_DashboardScreen> {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color color;
-
-  const _StatCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 90),
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Row(children: [
-              Icon(icon, color: color, size: 20),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(label, style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-                  overflow: TextOverflow.ellipsis),
-              ),
-            ]),
-            const SizedBox(height: 8),
-            Text(value,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () async {
+          final domains = await widget.api.listDomains();
+          if (!context.mounted) return;
+          await Navigator.push(context, MaterialPageRoute(
+            builder: (_) => AccountFormScreen(api: widget.api, domains: domains),
+          ));
+          _loadData();
+        },
+        icon: const Icon(Icons.add),
+        label: const Text('アカウント追加'),
       ),
     );
   }

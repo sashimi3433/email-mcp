@@ -3,7 +3,6 @@ import '../services/api_service.dart';
 import '../models/account.dart';
 import '../models/email_message.dart';
 import 'message_detail_screen.dart';
-import 'compose_screen.dart';
 
 class MessagesScreen extends StatefulWidget {
   final ApiService api;
@@ -95,15 +94,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
             onPressed: _syncing ? null : _sync,
             tooltip: '同期',
           ),
-          IconButton(
-            icon: const Icon(Icons.edit),
-            tooltip: '新規メール',
-            onPressed: () {
-              Navigator.push(context, MaterialPageRoute(
-                builder: (_) => ComposeScreen(api: widget.api, account: widget.account),
-              ));
-            },
-          ),
         ],
       ),
       body: Column(
@@ -124,7 +114,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
               ),
             ),
           const Divider(height: 1),
-          // Message list
           Expanded(
             child: _loading && _messages.isEmpty
               ? const Center(child: CircularProgressIndicator())
@@ -241,7 +230,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
       }
       return '${dt.month}/${dt.day}';
     } catch (_) {
-      return dateStr.length > 10 ? dateStr.substring(0, 10) : dateStr;
+      return '';
     }
   }
 }

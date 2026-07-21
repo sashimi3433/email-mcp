@@ -285,3 +285,36 @@ def search_messages(account_id: int, query: str, folder: Optional[str] = None,
         ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# ─── Unified inbox (all accounts) ──────────────────────────────────────
+
+def list_all_messages(limit: int = 100, offset: int = 0) -> list[dict]:
+    """List messages across all accounts, newest first."""
+    conn = get_connection()
+    rows = conn.execute(
+        """SELECT m.id, m.account_id, m.folder, m.message_uid, m.from_addr, m.to_addr,
+                  m.cc_addr, m.subject, m.date, m.flags, m.fetched_at,
+                  a.label as account_label, a.email_address as account_email
+           FROM messages m
+           JOIN accounts a ON m.account_id = a.id
+           WHERE m.folder = 'INBOX'
+           ORDER BY m.date DESC LIMIT ? OFFSET ?""",
+        (limit, offset)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_all_message(message_db_id: int) -> Optional[dict]:
+    """Get a single message by DB id (cross-account)."""
+    conn = get_connection()
+    row = conn.execute(
+        """SELECT m.*, a.label as account_label, a.email_address as account_email
+           FROM messages m
+           JOIN accounts a ON m.account_id = a.id
+           WHERE m.id = ?""",
+        (message_db_id,)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None

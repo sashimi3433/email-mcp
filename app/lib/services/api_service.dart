@@ -112,7 +112,20 @@ class ApiService {
     return null;
   }
 
-  // ─── Messages ────────────────────────────────────────────
+  // ─── Unified Inbox (all accounts) ────────────────────────
+
+  Future<List<EmailMessage>> listAllMessages({int limit = 100, int offset = 0}) async {
+    final res = await _get('/api/messages?limit=$limit&offset=$offset');
+    final list = res.data['messages'] as List;
+    return list.map((e) => EmailMessage.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<EmailMessage> getUnifiedMessage(int messageId) async {
+    final res = await _get('/api/messages/$messageId');
+    return EmailMessage.fromJson(res.data as Map<String, dynamic>);
+  }
+
+  // ─── Per-account Messages ────────────────────────────────
 
   Future<List<EmailMessage>> listMessages(int accountId,
       {String folder = 'INBOX', int limit = 50, int offset = 0}) async {
@@ -148,32 +161,10 @@ class ApiService {
   // ─── Sync ────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> syncAccount(int accountId,
-      {List<String>? folders, int limit = 100}) async {
+      {List<String>? folders, int limit = 0}) async {
     final res = await _post('/api/accounts/$accountId/sync', data: {
       if (folders != null) 'folders': folders,
       'limit': limit,
-    });
-    return res.data as Map<String, dynamic>;
-  }
-
-  // ─── Send / Reply ────────────────────────────────────────
-
-  Future<Map<String, dynamic>> sendMail(int accountId,
-      {required String to, required String subject, required String body, String? cc}) async {
-    final res = await _post('/api/accounts/$accountId/send', data: {
-      'to': to,
-      'subject': subject,
-      'body': body,
-      if (cc != null) 'cc': cc,
-    });
-    return res.data as Map<String, dynamic>;
-  }
-
-  Future<Map<String, dynamic>> replyMessage(int accountId, int messageId,
-      {required String body, bool replyAll = false}) async {
-    final res = await _post('/api/accounts/$accountId/messages/$messageId/reply', data: {
-      'body': body,
-      'reply_all': replyAll,
     });
     return res.data as Map<String, dynamic>;
   }

@@ -1,6 +1,7 @@
 /// Email message model.
 class EmailMessage {
   final int id;
+  final int accountId;
   final String folder;
   final String messageUid;
   final String fromAddr;
@@ -12,9 +13,12 @@ class EmailMessage {
   final String? bodyHtml;
   final String flags;
   final String? fetchedAt;
+  final String? accountLabel;
+  final String? accountEmail;
 
   EmailMessage({
     required this.id,
+    this.accountId = 0,
     this.folder = 'INBOX',
     this.messageUid = '',
     this.fromAddr = '',
@@ -26,11 +30,14 @@ class EmailMessage {
     this.bodyHtml,
     this.flags = '',
     this.fetchedAt,
+    this.accountLabel,
+    this.accountEmail,
   });
 
   factory EmailMessage.fromJson(Map<String, dynamic> json) {
     return EmailMessage(
       id: json['id'] as int? ?? 0,
+      accountId: json['account_id'] as int? ?? 0,
       folder: json['folder'] as String? ?? 'INBOX',
       messageUid: json['message_uid'] as String? ?? '',
       fromAddr: json['from_addr'] as String? ?? '',
@@ -42,6 +49,8 @@ class EmailMessage {
       bodyHtml: json['body_html'] as String?,
       flags: json['flags'] as String? ?? '',
       fetchedAt: json['fetched_at'] as String?,
+      accountLabel: json['account_label'] as String?,
+      accountEmail: json['account_email'] as String?,
     );
   }
 
