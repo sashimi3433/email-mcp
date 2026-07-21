@@ -6,7 +6,10 @@ from mcp.server.fastmcp import FastMCP
 from typing import Optional
 
 from .database import (
-    init_db, list_accounts, get_account, get_message,
+    init_db,
+    list_accounts as db_list_accounts,
+    get_account,
+    get_message as db_get_message,
     list_messages as db_list_messages,
     search_messages as db_search_messages,
 )
@@ -25,7 +28,7 @@ mcp = FastMCP("email-mcp", instructions=(
 @mcp.tool()
 def list_accounts() -> str:
     """登録済みのメールアカウント一覧を取得する。各アカウントのID、ラベル、メールアドレス、最終同期日時を返す。"""
-    accounts = list_accounts()
+    accounts = db_list_accounts()
     if not accounts:
         return json.dumps({"accounts": [], "message": "アカウントが登録されていません。Web UI (http://localhost:5858) から追加してください。"}, ensure_ascii=False)
     result = []
@@ -76,7 +79,7 @@ def get_message(account_id: int, message_id: int) -> str:
         account_id: list_accountsで取得したアカウントID
         message_id: list_messagesで取得したメッセージID（ローカルDBのID）
     """
-    msg = get_message(account_id, message_id)
+    msg = db_get_message(account_id, message_id)
     if not msg:
         return json.dumps({"error": "メッセージが見つかりません"}, ensure_ascii=False)
     return json.dumps({
