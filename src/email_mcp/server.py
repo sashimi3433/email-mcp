@@ -121,13 +121,13 @@ def search_messages(account_id: int, query: str, folder: Optional[str] = None, l
 
 
 @mcp.tool()
-def sync_account_tool(account_id: int, folders: Optional[list[str]] = None, limit: int = 100) -> str:
+def sync_account_tool(account_id: int, folders: Optional[list[str]] = None, limit: int = 0) -> str:
     """指定したアカウントのメールをIMAPサーバーからローカルに同期する。
 
     Args:
         account_id: list_accountsで取得したアカウントID
         folders: 同期するフォルダのリスト（省略時はデフォルトフォルダ: INBOX, Sent, Drafts, Trash, Junk）
-        limit: フォルダごとの最大取得件数（デフォルト: 100）
+        limit: フォルダごとの最大取得件数（0=全件取得、デフォルト: 0）
     """
     result = sync_account(account_id, folders, limit)
     return json.dumps(result, ensure_ascii=False, indent=2)

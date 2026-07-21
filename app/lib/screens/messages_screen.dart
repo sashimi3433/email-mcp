@@ -21,12 +21,19 @@ class _MessagesScreenState extends State<MessagesScreen> {
   String _selectedFolder = 'INBOX';
   bool _loading = true;
   bool _syncing = false;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _loadFolders();
     _loadMessages();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadFolders() async {
@@ -37,11 +44,15 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   Future<void> _loadMessages() async {
-    setState(() => _loading = true);
     try {
       _messages = await widget.api.listMessages(widget.account.id!, folder: _selectedFolder);
     } catch (_) {}
     if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _refresh() async {
+    setState(() => _loading = true);
+    await _loadMessages();
   }
 
   Future<void> _sync() async {
@@ -115,28 +126,36 @@ class _MessagesScreenState extends State<MessagesScreen> {
           const Divider(height: 1),
           // Message list
           Expanded(
-            child: _loading
+            child: _loading && _messages.isEmpty
               ? const Center(child: CircularProgressIndicator())
               : _messages.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                ? RefreshIndicator(
+                    onRefresh: _sync,
+                    child: ListView(
                       children: [
-                        const Icon(Icons.inbox, size: 64, color: Colors.grey),
-                        const SizedBox(height: 16),
-                        const Text('メールがありません'),
-                        const SizedBox(height: 8),
-                        FilledButton.icon(
-                          onPressed: _sync,
-                          icon: const Icon(Icons.sync),
-                          label: const Text('同期する'),
+                        const SizedBox(height: 100),
+                        Center(
+                          child: Column(
+                            children: [
+                              const Icon(Icons.inbox, size: 64, color: Colors.grey),
+                              const SizedBox(height: 16),
+                              const Text('メールがありません'),
+                              const SizedBox(height: 8),
+                              FilledButton.icon(
+                                onPressed: _sync,
+                                icon: const Icon(Icons.sync),
+                                label: const Text('同期する'),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
                   )
                 : RefreshIndicator(
-                    onRefresh: _loadMessages,
+                    onRefresh: _refresh,
                     child: ListView.builder(
+                      controller: _scrollController,
                       itemCount: _messages.length,
                       itemBuilder: (ctx, i) {
                         final m = _messages[i];
@@ -177,6 +196,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                 message: m,
                               ),
                             ));
+                            if (!mounted) return;
                             _loadMessages();
                           },
                         );
@@ -201,7 +221,10 @@ class _MessagesScreenState extends State<MessagesScreen> {
         label: Text(count != null ? '$folder ($count)' : folder),
         selected: isSelected,
         onSelected: (_) {
-          setState(() => _selectedFolder = folder);
+          setState(() {
+            _selectedFolder = folder;
+            _loading = true;
+          });
           _loadMessages();
         },
       ),
@@ -211,7 +234,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
   String _formatDate(String dateStr) {
     if (dateStr.isEmpty) return '';
     try {
-      final dt = DateTime.parse(dateStr);
+      final dt = DateTime.parse(dateStr).toLocal();
       final now = DateTime.now();
       if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
         return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';

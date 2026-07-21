@@ -8,8 +8,11 @@ from email.utils import parseaddr, parsedate_to_datetime
 from typing import Optional
 import html2text
 import re
+import logging
 
 from .crypto import decrypt
+
+logger = logging.getLogger(__name__)
 
 
 def _decode_str(s: Optional[str]) -> str:
@@ -45,7 +48,6 @@ def _html_to_text(html: str) -> str:
     h.ignore_tables = False
     h.body_width = 0  # no wrapping
     text = h.handle(html)
-    # Trim common signatures/footers
     lines = text.splitlines()
     clean = []
     in_sig = False
@@ -100,7 +102,57 @@ def _get_flags(msg_data: list) -> str:
     for item in msg_data:
         if isinstance(item, bytes) and item.startswith(b"("):
             return item.decode("utf-8", errors="replace")
+        if isinstance(item, tuple):
+            # (metadata, data) tuple from UID FETCH
+            meta = item[0]
+            if isinstance(meta, bytes) and b"FLAGS" in meta:
+                # Extract flags from metadata like b'1 (UID 1 FLAGS (\\Seen))'
+                flags_match = re.search(rb'FLAGS \(([^)]*)\)', meta)
+                if flags_match:
+                    return f"({flags_match.group(1).decode('utf-8', errors='replace')})"
     return ""
+
+
+def _parse_one_message(uid: bytes, msg_data: list) -> Optional[dict]:
+    """Parse a single FETCH response into a message dict."""
+    raw_email = None
+    flags = ""
+    for item in msg_data:
+        if isinstance(item, tuple):
+            meta = item[0]
+            data = item[1]
+            if isinstance(meta, bytes) and b"FLAGS" in meta:
+                flags_match = re.search(rb'FLAGS \(([^)]*)\)', meta)
+                if flags_match:
+                    flags = f"({flags_match.group(1).decode('utf-8', errors='replace')})"
+            if isinstance(data, bytes):
+                raw_email = data
+        elif isinstance(item, bytes):
+            if b"FLAGS" in item:
+                flags_match = re.search(rb'FLAGS \(([^)]*)\)', item)
+                if flags_match:
+                    flags = f"({flags_match.group(1).decode('utf-8', errors='replace')})"
+    if not raw_email:
+        return None
+
+    msg = email.message_from_bytes(raw_email)
+    plain, html = _get_text_body(msg)
+    date_str = msg.get("Date", "")
+    try:
+        dt = parsedate_to_datetime(date_str).isoformat()
+    except Exception:
+        dt = date_str
+    return {
+        "message_uid": uid.decode("utf-8", errors="replace") if isinstance(uid, bytes) else str(uid),
+        "from_addr": _extract_addr(msg.get("From")),
+        "to_addr": _extract_addr(msg.get("To")),
+        "cc_addr": _extract_addr(msg.get("Cc")),
+        "subject": _decode_str(msg.get("Subject")),
+        "date": dt,
+        "body_text": plain,
+        "body_html": html,
+        "flags": flags,
+    }
 
 
 class IMAPClient:
@@ -137,61 +189,93 @@ class IMAPClient:
             for item in data:
                 if item:
                     raw = item.decode("utf-8", errors="replace") if isinstance(item, bytes) else item
-                    # Format: (\HasNoChildren) "." "INBOX.Sent"
-                    # The delimiter may vary; extract the last quoted part
                     parts = raw.split('"')
-                    # Find pairs of quotes — folder name is in the last quoted segment
                     if len(parts) >= 3:
                         folder = parts[-2]
                         folders.append(folder)
         return folders
 
-    def fetch_messages(self, folder: str, limit: int = 100) -> list[dict]:
-        """Fetch latest messages from a folder."""
+    def fetch_messages(self, folder: str, limit: int = 0) -> list[dict]:
+        """Fetch messages from a folder using UID FETCH for stability.
+
+        Args:
+            folder: Folder name to fetch from
+            limit: Max messages to fetch. 0 = all messages.
+                   Positive = most recent N by UID.
+        """
         if not self.conn:
             self.connect()
         status, _ = self.conn.select(folder, readonly=True)
         if status != "OK":
             return []
 
-        # Search all messages
-        status, data = self.conn.search(None, "ALL")
+        # Use UID SEARCH to get all UIDs (stable across sessions)
+        status, data = self.conn.uid("search", None, "ALL")
         if status != "OK" or not data[0]:
             return []
 
-        uids = data[0].split()
-        # Get the most recent `limit` messages
-        uids = uids[-limit:] if len(uids) > limit else uids
+        all_uids = data[0].split()
+        # Sort by UID ascending (oldest first); most recent are at the end
+        all_uids.sort(key=lambda x: int(x))
+
+        if limit and limit > 0 and len(all_uids) > limit:
+            # Take the most recent `limit` UIDs
+            uids_to_fetch = all_uids[-limit:]
+        else:
+            uids_to_fetch = all_uids
+
+        total = len(uids_to_fetch)
+        logger.info(f"Fetching {total} messages from '{folder}' (total in folder: {len(all_uids)})")
 
         messages = []
-        for uid in uids:
+        # Fetch in batches of 50 to avoid timeouts on large folders
+        batch_size = 50
+        for batch_start in range(0, total, batch_size):
+            batch_end = min(batch_start + batch_size, total)
+            batch = uids_to_fetch[batch_start:batch_end]
+
+            # Build UID range string for batch fetch
+            uid_set = b",".join(batch)
+
             try:
-                status, msg_data = self.conn.fetch(uid, "(RFC822 FLAGS)")
-                if status != "OK" or not msg_data:
+                status, msg_data = self.conn.uid("fetch", uid_set, "(UID FLAGS RFC822)")
+                if status != "OK":
+                    logger.warning(f"Batch fetch failed for UIDs {batch_start}-{batch_end}")
                     continue
-                raw_email = msg_data[0][1]
-                flags = _get_flags(msg_data[0])
-                msg = email.message_from_bytes(raw_email)
-                plain, html = _get_text_body(msg)
-                date_str = msg.get("Date", "")
-                try:
-                    dt = parsedate_to_datetime(date_str).isoformat()
-                except Exception:
-                    dt = date_str
-                messages.append({
-                    "message_uid": uid.decode("utf-8", errors="replace") if isinstance(uid, bytes) else str(uid),
-                    "from_addr": _extract_addr(msg.get("From")),
-                    "to_addr": _extract_addr(msg.get("To")),
-                    "cc_addr": _extract_addr(msg.get("Cc")),
-                    "subject": _decode_str(msg.get("Subject")),
-                    "date": dt,
-                    "body_text": plain,
-                    "body_html": html,
-                    "flags": flags,
-                })
+
+                # Parse responses - msg_data is a list of tuples (metadata, data) interleaved with b")"
+                i = 0
+                while i < len(msg_data):
+                    item = msg_data[i]
+                    if isinstance(item, tuple) and len(item) >= 2:
+                        meta = item[0]
+                        raw = item[1]
+                        if isinstance(meta, bytes) and isinstance(raw, bytes):
+                            # Extract UID from metadata
+                            uid_match = re.search(rb'UID (\d+)', meta)
+                            uid_bytes = uid_match.group(1) if uid_match else b"?"
+
+                            parsed = _parse_one_message(uid_bytes, [item])
+                            if parsed:
+                                messages.append(parsed)
+                    i += 1
+
+                logger.info(f"Fetched batch {batch_start}-{batch_end}/{total} from '{folder}'")
             except Exception as e:
-                # Skip unparseable messages
-                continue
+                logger.error(f"Error fetching batch {batch_start}-{batch_end}: {e}")
+                # Fallback: fetch one by one
+                for uid in batch:
+                    try:
+                        status, single_data = self.conn.uid("fetch", uid, "(UID FLAGS RFC822)")
+                        if status == "OK" and single_data:
+                            parsed = _parse_one_message(uid, single_data)
+                            if parsed:
+                                messages.append(parsed)
+                    except Exception as e2:
+                        logger.error(f"Error fetching UID {uid}: {e2}")
+                        continue
+
+        logger.info(f"Successfully fetched {len(messages)}/{total} messages from '{folder}'")
         return messages
 
     def search_server(self, folder: str, criteria: str, limit: int = 50) -> list[dict]:
@@ -202,39 +286,24 @@ class IMAPClient:
         if status != "OK":
             return []
 
-        status, data = self.conn.search(None, criteria)
+        status, data = self.conn.uid("search", None, criteria)
         if status != "OK" or not data[0]:
             return []
 
         uids = data[0].split()
-        uids = uids[-limit:] if len(uids) > limit else uids
+        uids.sort(key=lambda x: int(x))
+        if limit and limit > 0 and len(uids) > limit:
+            uids = uids[-limit:]
 
         messages = []
         for uid in uids:
             try:
-                status, msg_data = self.conn.fetch(uid, "(RFC822 FLAGS)")
+                status, msg_data = self.conn.uid("fetch", uid, "(UID FLAGS RFC822)")
                 if status != "OK":
                     continue
-                raw_email = msg_data[0][1]
-                flags = _get_flags(msg_data[0])
-                msg = email.message_from_bytes(raw_email)
-                plain, html = _get_text_body(msg)
-                date_str = msg.get("Date", "")
-                try:
-                    dt = parsedate_to_datetime(date_str).isoformat()
-                except Exception:
-                    dt = date_str
-                messages.append({
-                    "message_uid": uid.decode("utf-8", errors="replace") if isinstance(uid, bytes) else str(uid),
-                    "from_addr": _extract_addr(msg.get("From")),
-                    "to_addr": _extract_addr(msg.get("To")),
-                    "cc_addr": _extract_addr(msg.get("Cc")),
-                    "subject": _decode_str(msg.get("Subject")),
-                    "date": dt,
-                    "body_text": plain,
-                    "body_html": html,
-                    "flags": flags,
-                })
+                parsed = _parse_one_message(uid, msg_data)
+                if parsed:
+                    messages.append(parsed)
             except Exception:
                 continue
         return messages

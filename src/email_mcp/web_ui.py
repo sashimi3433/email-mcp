@@ -271,7 +271,7 @@ def api_search_messages(account_id):
 @app.route("/api/accounts/<int:account_id>/sync", methods=["POST"])
 def api_sync_account(account_id):
     data = request.json or {}
-    result = sync_account(account_id, folders=data.get("folders"), limit=data.get("limit", 100))
+    result = sync_account(account_id, folders=data.get("folders"), limit=data.get("limit", 0))
     return jsonify(result)
 
 

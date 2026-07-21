@@ -14,9 +14,15 @@ logger = logging.getLogger(__name__)
 
 
 def sync_account(account_id: int, folders: Optional[list[str]] = None,
-                 limit: int = DEFAULT_SYNC_LIMIT) -> dict:
+                 limit: int = 0) -> dict:
     """
     Sync emails from an account to local cache.
+
+    Args:
+        account_id: Account ID
+        folders: Folders to sync (None = default folders)
+        limit: Max messages per folder. 0 = ALL messages.
+
     Returns {success, messages_synced, folders_synced, errors}.
     """
     account = get_account(account_id)
@@ -60,7 +66,8 @@ def sync_account(account_id: int, folders: Optional[list[str]] = None,
                 continue
 
             try:
-                messages = client.fetch_messages(matched, limit)
+                # limit=0 means fetch ALL messages
+                messages = client.fetch_messages(matched, limit=limit)
                 if messages:
                     save_messages(account_id, matched, messages)
                 synced_folders.append(matched)
