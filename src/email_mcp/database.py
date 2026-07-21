@@ -241,6 +241,30 @@ def save_messages(account_id: int, folder: str, messages: list[dict]):
     conn.close()
 
 
+def delete_missing_messages(account_id: int, folder: str, current_uids: set[str]) -> int:
+    """Delete cached messages whose UIDs are no longer on the server.
+    Returns the number of deleted rows."""
+    conn = get_connection()
+    if current_uids:
+        placeholders = ",".join("?" * len(current_uids))
+        cur = conn.execute(
+            f"""DELETE FROM messages
+                WHERE account_id = ? AND folder = ?
+                AND message_uid NOT IN ({placeholders})""",
+            [account_id, folder, *current_uids]
+        )
+    else:
+        # Server folder is empty — clear everything
+        cur = conn.execute(
+            "DELETE FROM messages WHERE account_id = ? AND folder = ?",
+            (account_id, folder)
+        )
+    deleted = cur.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
+
+
 def list_messages(account_id: int, folder: str = "INBOX", limit: int = DEFAULT_SYNC_LIMIT,
                   offset: int = 0) -> list[dict]:
     conn = get_connection()

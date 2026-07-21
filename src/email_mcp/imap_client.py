@@ -189,6 +189,19 @@ class IMAPClient:
                         folders.append(folder)
         return folders
 
+    def get_folder_uids(self, folder: str) -> list[str]:
+        """Return all message UIDs in a folder as a list of strings."""
+        if not self.conn:
+            self.connect()
+        status, _ = self.conn.select(folder, readonly=True)
+        if status != "OK":
+            return []
+        status, data = self.conn.uid("search", None, "ALL")
+        if status != "OK" or not data[0]:
+            return []
+        uids = data[0].split()
+        return [u.decode("utf-8", errors="replace") for u in uids]
+
     def fetch_messages(self, folder: str, limit: int = 0) -> list[dict]:
         """Fetch messages from a folder using UID FETCH for stability.
 

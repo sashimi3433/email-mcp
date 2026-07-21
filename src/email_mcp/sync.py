@@ -5,6 +5,7 @@ from typing import Optional
 
 from .database import (
     get_account, update_last_sync, save_messages,
+    delete_missing_messages,
     list_messages as db_list_messages,
 )
 from .imap_client import connect_imap_for_account
@@ -18,18 +19,22 @@ def sync_account(account_id: int, folders: Optional[list[str]] = None,
     """
     Sync emails from an account to local cache.
 
+    Performs a full reconciliation per folder:
+      1. Fetch all current UIDs from the IMAP server
+      2. Delete local messages whose UIDs no longer exist on the server
+      3. Fetch and upsert all current messages
+
     Args:
         account_id: Account ID
-        folders: Folders to sync (None = default folders)
+        folders: Folders to sync (None = all server folders)
         limit: Max messages per folder. 0 = ALL messages.
 
-    Returns {success, messages_synced, folders_synced, errors}.
+    Returns {success, messages_synced, messages_deleted, folders_synced, errors}.
     """
     account = get_account(account_id)
     if not account:
         return {"success": False, "error": f"Account {account_id} not found"}
 
-    # Resolve IMAP settings (account-level overrides domain-level)
     imap_host = account["imap_host"] or account.get("sd_imap_host")
     imap_port = account["imap_port"] or account.get("sd_imap_port")
     imap_ssl = account["imap_ssl"] if account["imap_ssl"] is not None else account.get("sd_imap_ssl", 1)
@@ -37,29 +42,26 @@ def sync_account(account_id: int, folders: Optional[list[str]] = None,
     if not imap_host:
         return {"success": False, "error": "No IMAP host configured for this account"}
 
-    # Patch account for connect function
     account["imap_host"] = imap_host
     account["imap_port"] = imap_port
     account["imap_ssl"] = imap_ssl
 
     target_folders = folders or DEFAULT_FOLDERS
     total_synced = 0
+    total_deleted = 0
     synced_folders = []
     errors = []
 
     client = connect_imap_for_account(account)
     try:
         client.connect()
-        # Get actual folder list from server
         available_folders = client.list_folders()
         logger.info(f"Available folders: {available_folders}")
 
-        # If no folders specified, sync ALL server folders
         if target_folders is None:
             target_folders = available_folders
 
         for folder in target_folders:
-            # Try exact match first, then case-insensitive
             matched = None
             for f in available_folders:
                 if f.upper() == folder.upper() or f == folder:
@@ -70,7 +72,17 @@ def sync_account(account_id: int, folders: Optional[list[str]] = None,
                 continue
 
             try:
-                # limit=0 means fetch ALL messages
+                # 1. Get current UIDs from server
+                server_uids = set(client.get_folder_uids(matched))
+                logger.info(f"Server UIDs for '{matched}': {len(server_uids)}")
+
+                # 2. Delete messages no longer on server
+                deleted = delete_missing_messages(account_id, matched, server_uids)
+                if deleted:
+                    logger.info(f"Deleted {deleted} stale messages from '{matched}'")
+                total_deleted += deleted
+
+                # 3. Fetch and upsert all current messages
                 messages = client.fetch_messages(matched, limit=limit)
                 if messages:
                     save_messages(account_id, matched, messages)
@@ -86,6 +98,7 @@ def sync_account(account_id: int, folders: Optional[list[str]] = None,
             "success": True,
             "account": account["email_address"],
             "messages_synced": total_synced,
+            "messages_deleted": total_deleted,
             "folders_synced": synced_folders,
             "errors": errors,
         }
