@@ -27,7 +27,13 @@ app.secret_key = "email-mcp-web-ui-secret"
 
 
 @app.route("/")
-def index():
+@app.route("/<path:spa_path>")
+def index(spa_path=None):
+    """Serve the SPA for all non-API routes (History API support)."""
+    # Only serve SPA for known views; let 404 handle unknown paths
+    if spa_path and spa_path not in ("inbox", "accounts", "domains", "search"):
+        from werkzeug.exceptions import NotFound
+        raise NotFound()
     accounts = list_accounts()
     domains = list_server_domains()
     return render_template("index.html", accounts=accounts, domains=domains)
