@@ -100,11 +100,15 @@ function showToast(msg, type = 'info') {
 }
 
 // ─── Navigation (History API) ──────────────────
+function updateNavActive(view) {
+    document.querySelectorAll('.nav-item').forEach(el => {
+        el.classList.toggle('active', view ? el.dataset.view === view : false);
+    });
+}
+
 function navigateTo(view, push = true) {
     currentView = view;
-    document.querySelectorAll('.nav-item').forEach(el => {
-        el.classList.toggle('active', el.dataset.view === view);
-    });
+    updateNavActive(view);
     const main = document.getElementById('main-content');
     main.scrollTop = 0;
 
@@ -120,7 +124,14 @@ function navigateTo(view, push = true) {
 
 // Handle browser back/forward
 window.addEventListener('popstate', (e) => {
-    if (e.state?.view) {
+    if (!e.state) {
+        navigateTo('inbox', false);
+        return;
+    }
+    if (e.state.view === 'message' && e.state.id) {
+        // Re-render message detail without pushing new history
+        viewMessage(e.state.id, false);
+    } else if (e.state.view) {
         navigateTo(e.state.view, false);
     }
 });
@@ -244,7 +255,13 @@ function renderMessageList(messages) {
 }
 
 // ─── Message Detail ───────────────────────────
-async function viewMessage(id) {
+async function viewMessage(id, push = true) {
+    // Update URL via History API
+    if (push) {
+        history.pushState({ view: 'message', id }, '', `/message/${id}`);
+    }
+    updateNavActive(null);
+
     const main = document.getElementById('main-content');
     main.innerHTML = `<div class="loading"><div class="spinner"></div></div>`;
     try {
@@ -274,7 +291,7 @@ async function viewMessage(id) {
         main.innerHTML = html;
     } catch {
         showToast('メッセージの取得に失敗しました', 'error');
-        switchView('inbox');
+        navigateTo('inbox');
     }
 }
 

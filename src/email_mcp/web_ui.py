@@ -3,6 +3,7 @@
 import json
 import logging
 from flask import Flask, render_template, request, jsonify, redirect, url_for
+from werkzeug.exceptions import NotFound
 
 from .database import (
     init_db, list_accounts, get_account, delete_account,
@@ -32,8 +33,12 @@ def index(spa_path=None):
     """Serve the SPA for all non-API routes (History API support)."""
     # Only serve SPA for known views; let 404 handle unknown paths
     if spa_path and spa_path not in ("inbox", "accounts", "domains", "search"):
-        from werkzeug.exceptions import NotFound
-        raise NotFound()
+        # Check for /message/<id> pattern
+        parts = spa_path.split("/")
+        if len(parts) == 2 and parts[0] == "message" and parts[1].isdigit():
+            pass  # Valid message route
+        else:
+            raise NotFound()
     accounts = list_accounts()
     domains = list_server_domains()
     return render_template("index.html", accounts=accounts, domains=domains)
