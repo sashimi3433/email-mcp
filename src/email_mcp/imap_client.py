@@ -6,6 +6,7 @@ from email.header import decode_header
 from email.message import Message as EmailMessage
 from email.utils import parseaddr, parsedate_to_datetime
 from typing import Optional
+from datetime import timezone
 import html2text
 import re
 import logging
@@ -46,7 +47,7 @@ def _html_to_text(html: str) -> str:
     h.ignore_links = False
     h.ignore_images = True
     h.ignore_tables = False
-    h.body_width = 0  # no wrapping
+    h.body_width = 0
     text = h.handle(html)
     lines = text.splitlines()
     clean = []
@@ -95,22 +96,19 @@ def _get_text_body(msg: EmailMessage) -> tuple[str, str]:
     return plain, html
 
 
-def _get_flags(msg_data: list) -> str:
-    """Extract IMAP flags from FETCH response."""
-    if not msg_data:
+def _normalize_date(date_str: str) -> str:
+    """Parse email date and return normalized UTC ISO format."""
+    if not date_str:
         return ""
-    for item in msg_data:
-        if isinstance(item, bytes) and item.startswith(b"("):
-            return item.decode("utf-8", errors="replace")
-        if isinstance(item, tuple):
-            # (metadata, data) tuple from UID FETCH
-            meta = item[0]
-            if isinstance(meta, bytes) and b"FLAGS" in meta:
-                # Extract flags from metadata like b'1 (UID 1 FLAGS (\\Seen))'
-                flags_match = re.search(rb'FLAGS \(([^)]*)\)', meta)
-                if flags_match:
-                    return f"({flags_match.group(1).decode('utf-8', errors='replace')})"
-    return ""
+    try:
+        dt = parsedate_to_datetime(date_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        return dt.isoformat()
+    except Exception:
+        return date_str
 
 
 def _parse_one_message(uid: bytes, msg_data: list) -> Optional[dict]:
@@ -118,7 +116,7 @@ def _parse_one_message(uid: bytes, msg_data: list) -> Optional[dict]:
     raw_email = None
     flags = ""
     for item in msg_data:
-        if isinstance(item, tuple):
+        if isinstance(item, tuple) and len(item) >= 2:
             meta = item[0]
             data = item[1]
             if isinstance(meta, bytes) and b"FLAGS" in meta:
@@ -137,11 +135,7 @@ def _parse_one_message(uid: bytes, msg_data: list) -> Optional[dict]:
 
     msg = email.message_from_bytes(raw_email)
     plain, html = _get_text_body(msg)
-    date_str = msg.get("Date", "")
-    try:
-        dt = parsedate_to_datetime(date_str).isoformat()
-    except Exception:
-        dt = date_str
+    dt = _normalize_date(msg.get("Date", ""))
     return {
         "message_uid": uid.decode("utf-8", errors="replace") if isinstance(uid, bytes) else str(uid),
         "from_addr": _extract_addr(msg.get("From")),
@@ -201,7 +195,6 @@ class IMAPClient:
         Args:
             folder: Folder name to fetch from
             limit: Max messages to fetch. 0 = all messages.
-                   Positive = most recent N by UID.
         """
         if not self.conn:
             self.connect()
@@ -209,17 +202,14 @@ class IMAPClient:
         if status != "OK":
             return []
 
-        # Use UID SEARCH to get all UIDs (stable across sessions)
         status, data = self.conn.uid("search", None, "ALL")
         if status != "OK" or not data[0]:
             return []
 
         all_uids = data[0].split()
-        # Sort by UID ascending (oldest first); most recent are at the end
         all_uids.sort(key=lambda x: int(x))
 
         if limit and limit > 0 and len(all_uids) > limit:
-            # Take the most recent `limit` UIDs
             uids_to_fetch = all_uids[-limit:]
         else:
             uids_to_fetch = all_uids
@@ -228,13 +218,10 @@ class IMAPClient:
         logger.info(f"Fetching {total} messages from '{folder}' (total in folder: {len(all_uids)})")
 
         messages = []
-        # Fetch in batches of 50 to avoid timeouts on large folders
         batch_size = 50
         for batch_start in range(0, total, batch_size):
             batch_end = min(batch_start + batch_size, total)
             batch = uids_to_fetch[batch_start:batch_end]
-
-            # Build UID range string for batch fetch
             uid_set = b",".join(batch)
 
             try:
@@ -243,18 +230,14 @@ class IMAPClient:
                     logger.warning(f"Batch fetch failed for UIDs {batch_start}-{batch_end}")
                     continue
 
-                # Parse responses - msg_data is a list of tuples (metadata, data) interleaved with b")"
                 i = 0
                 while i < len(msg_data):
                     item = msg_data[i]
                     if isinstance(item, tuple) and len(item) >= 2:
                         meta = item[0]
-                        raw = item[1]
-                        if isinstance(meta, bytes) and isinstance(raw, bytes):
-                            # Extract UID from metadata
+                        if isinstance(meta, bytes):
                             uid_match = re.search(rb'UID (\d+)', meta)
                             uid_bytes = uid_match.group(1) if uid_match else b"?"
-
                             parsed = _parse_one_message(uid_bytes, [item])
                             if parsed:
                                 messages.append(parsed)
@@ -263,7 +246,6 @@ class IMAPClient:
                 logger.info(f"Fetched batch {batch_start}-{batch_end}/{total} from '{folder}'")
             except Exception as e:
                 logger.error(f"Error fetching batch {batch_start}-{batch_end}: {e}")
-                # Fallback: fetch one by one
                 for uid in batch:
                     try:
                         status, single_data = self.conn.uid("fetch", uid, "(UID FLAGS RFC822)")

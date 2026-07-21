@@ -50,9 +50,13 @@ def sync_account(account_id: int, folders: Optional[list[str]] = None,
     client = connect_imap_for_account(account)
     try:
         client.connect()
-        # Get actual folder list
+        # Get actual folder list from server
         available_folders = client.list_folders()
         logger.info(f"Available folders: {available_folders}")
+
+        # If no folders specified, sync ALL server folders
+        if target_folders is None:
+            target_folders = available_folders
 
         for folder in target_folders:
             # Try exact match first, then case-insensitive
