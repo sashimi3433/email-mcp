@@ -269,7 +269,7 @@ async function viewMessage(id, push = true) {
         const color = avatarColor(msg.account_label || msg.from_addr || '?');
         let html = `
             <div class="message-detail">
-                <button class="btn btn-sm back-btn" onclick="switchView('inbox')"><span class="material-symbols-rounded" style="font-size:16px">arrow_back</span> 戻る</button>
+                <button class="btn btn-sm back-btn" onclick="navigateTo('inbox')"><span class="material-symbols-rounded" style="font-size:16px">arrow_back</span> 戻る</button>
                 <div class="detail-header">
                     <div class="detail-subject">${escapeHtml(msg.subject || '(件名なし)')}</div>
                     ${msg.account_label ? `<div style="margin-bottom:12px"><span class="message-account-tag" style="background:${color}22;color:${color}">${escapeHtml(msg.account_label)}</span></div>` : ''}
