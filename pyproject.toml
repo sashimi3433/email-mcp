@@ -24,7 +24,7 @@ classifiers = [
 ]
 dependencies = [
     "beautifulsoup4>=4.14.3",
-    "cryptography>=48.0.0",
+    "cryptography>=50.0.0",
     "flask>=3.1.3",
     "html2text>=2025.4.15",
     "mcp[cli]>=1.27.2",
